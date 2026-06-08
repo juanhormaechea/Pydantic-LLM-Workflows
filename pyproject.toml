@@ -1,0 +1,13 @@
+[project]
+name = "my-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "instructor<=1.15.1",
+    "mistralai<2.0.0",
+    "anthropic>=0.96.0",
+    "pydantic-ai-slim[anthropic]>=1.83.0",
+    "pydantic[email]>=2.13.4"
+]
