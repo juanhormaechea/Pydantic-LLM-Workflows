@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ValidationError, Field, EmailStr
+from pydantic import BaseModel, ValidationError, Field, EmailStr, field_validator
 from typing import Optional, Literal, List
 from datetime import date
 from anthropic import Anthropic
@@ -12,9 +12,10 @@ class UserInput(BaseModel):
     name: str = Field(description="name of the user")
     email: EmailStr = Field(description="email of the user")
     query: str
-    order_id: Optional[int] = Field(None, description="5-digit number (cannot start with 0)", ge=10000, le=99999)
+    order_id: Optional[str] = Field(None, description="5-digit order ID. Cannot start with 0", ge=10000, le=99999)
     purchase_date: Optional[date] = None
 
+    
 
 class CustomerQuery(UserInput):
     priority: str = Field(
@@ -62,7 +63,7 @@ def chat(
     if thinking:
         params["thinking"] = thinking
     
-    message = client.messages.create(model="claude-haiku-4-5-20251001", max_tokens=2000, messages=messages)
+    message = client.messages.create(model="claude-haiku-4-5-20251001", messages=messages, **params)
     response = message.content[0].text
     return response
 
