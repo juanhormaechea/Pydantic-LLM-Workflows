@@ -57,27 +57,38 @@ class FAQLookupArgs(BaseModel):
 class CheckOrderStatusArgs(BaseModel):
 
 
-def add_user_message(messages: list[dict], text: str, toolResult: Optional[str], id: Optional[str], error: Optional[bool]) -> None:
+def add_user_message(messages: list[dict], text: Optional[str], toolResult: Optional[List[dict]]) -> None:
     params = {
         "role": "user",
-        "content": [{
-            "type": "text",
-            "text": text
-        }]
+        "content": None
     }
+    
     if toolResult:
-        params["content"].append({
-            "type": "tool_result",
-            "tool_use_id": id,
-            "content": toolResult,
-            "is_error": error
-        })
+        params["content"] = toolResult
+    
+    params["content"] = [{
+        "type": "text",
+        "content": text
+    }]
     messages.append(params)
 
 
-def add_assistant_message(messages: list[dict], text: str) -> None:
-    assistant_message = {"role": "assistant", "content": text}
+def add_assistant_message(messages: list[dict], response: List[dict]) -> None:
+    assistant_message = {"role": "assistant", "content": response}
     messages.append(assistant_message)
+
+
+
+def text_from_message(message) -> str:
+    return "\n".join([block for block in message.content if block.type == "text"])
+
+
+def run_tools(message) -> dict:
+    tool_requests = [block for block in message.content if block.type == "tool_use"]
+
+    for tool_request in tool_requests:
+        try:
+            if tool_request == "":
 
 
 def chat(
@@ -88,6 +99,8 @@ def chat(
     tools: Optional[List[dict]] = None
 ) -> str:
     params = {
+        "messages": messages,
+        "model": "claude-haiku-4-5-20251001",
         "max_tokens": 2000,
         "stop_sequences": stop_sequences or []
     }
@@ -101,8 +114,16 @@ def chat(
     if tools:
         params["tools"] = tools
     
-    message = client.messages.create(model="claude-haiku-4-5-20251001", messages=messages, **params)
-    response = message.content[0].text
+    response = client.messages.create(**params)
+    
+    while True:
+        if response.stop_reason != "tool_use":
+            break
+        
+        add_assistant_message(messages, response.content)
+        add_user_message(messages, toolResult=run_tools(response.content), text=None)
+        response = client.messages.create(**params)
+
     return response
 
 
@@ -115,6 +136,8 @@ def chat_instructor(
     tools: Optional[List[dict]] = None
 ) -> str:
     params = {
+        "response_model": response_model,
+        "messages": messages,
         "max_tokens": 2000,
         "stop_sequences": stop_sequences or [],
     }
@@ -127,8 +150,8 @@ def chat_instructor(
     
     if tools:
         params["tools"] = tools
-        
-    message = client_instructor.messages.create(response_model=response_model, messages=messages, **params)
+
+    message = client_instructor.messages.create(**params)
     if isinstance(message, BaseModel):
         return message.model_dump_json(indent=2)
     if isinstance(message, str):
