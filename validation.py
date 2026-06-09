@@ -12,7 +12,7 @@ class UserInput(BaseModel):
     name: str = Field(description="name of the user")
     email: EmailStr = Field(description="email of the user")
     query: str
-    order_id: Optional[str] = Field(None, description="5-digit order ID. Cannot start with 0", ge=10000, le=99999)
+    order_id: Optional[int] = Field(None, description="5-digit order ID. Cannot start with 0", ge=10000, le=99999)
     purchase_date: Optional[date] = None
 
     
@@ -53,6 +53,8 @@ def chat(
     stop_sequences: Optional[list[str]] = None,
 ) -> str:
     params = {
+        "model" : "claude-haiku-4-5-20251001",
+        "messages": messages,
         "max_tokens": 2000,
         "stop_sequences": stop_sequences or []
     }
@@ -63,7 +65,7 @@ def chat(
     if thinking:
         params["thinking"] = thinking
     
-    message = client.messages.create(model="claude-haiku-4-5-20251001", messages=messages, **params)
+    message = client.messages.create(**params)
     response = message.content[0].text
     return response
 
@@ -76,6 +78,8 @@ def chat_instructor(
     stop_sequences: Optional[list[str]] = None,
 ) -> str:
     params = {
+        "response_model": response_model,
+        "messages": messages,
         "max_tokens": 2000,
         "stop_sequences": stop_sequences or []
     }
@@ -86,7 +90,7 @@ def chat_instructor(
     if thinking:
         params["thinking"] = thinking
     
-    message = client_instructor.messages.create(response_model=response_model, messages=messages, **params)
+    message = client_instructor.create(**params)
     if isinstance(message, BaseModel):
         return message.model_dump_json(indent=2)
     if isinstance(message, str):
@@ -204,7 +208,7 @@ user_input_json = '''
     {
         "name": "Joe",
         "email": "joe@email.com",
-        "query": "I am looking to buy a pair of Nike Air Force One. Do you guys have it in size 11? I don't see it on the website.",
+        "query": "My computer arrived completely destroyed. Battery is fuming.",
         "order_id": 23546,
         "purchase_date": "2025-09-28"
 
@@ -230,6 +234,6 @@ prompt = f"""Analyze the following customer query and provide a structured respo
 
 
 # validated_data = validate_llm_response(CustomerQuery, prompt)
-# validated_data = validate_llm_response_instructor(CustomerQuery, prompt)
-validated_data = validate_llm_response_agent(prompt, "anthropic:claude-haiku-4-5-20251001", CustomerQuery)
+validated_data = validate_llm_response_instructor(CustomerQuery, prompt)
+# validated_data = validate_llm_response_agent(prompt, "anthropic:claude-haiku-4-5-20251001", CustomerQuery)
 print(validated_data)
