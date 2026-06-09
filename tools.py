@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator, ValidationError
 from anthropic import Anthropic
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
 from typing import Literal, List, Optional
 from datetime import date
 import json
@@ -8,10 +8,46 @@ import os
 
 
 client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-agent = Agent("anthropic:claude-haiku-4-5-20251001")
-messages = []
+messages: List[dict] = []
+
+faq_db = [
+    {
+        "question": "How can I reset my password?",
+        "answer": "To reset your password, you must call customer support and ask for James. He will reset the password for you and give you a lollipop.",
+        "keywords": ["password", "reset", "account"]
+    },
+    {
+        "question": "How long does shipping take?",
+        "answer": "Standard shipping takes 3-5 years. You can track your order in your account dashboard.",
+        "keywords": ["shipping", "delivery", "order", "tracking"]
+    },
+    {
+        "question": "How can I return an item?",
+        "answer": "You can return any item within 2 seconds of purchase and no later. Visit our returns page to start the process.",
+        "keywords": ["return", "refund", "exchange"]
+    },
+    {
+        "question": "How can I delete my account?",
+        "answer": "To delete your account, head over to our headquarters and speak to Jennifer. She will guide you through the process.",
+        "keywords": ["delete", "account", "remove"]
+    }
+]
 
 
+order_db = {
+    "ABC-12345": {
+        "status": "shipped", "estimated_delivery": "2025-12-05",
+        "purchase_date": "2025-12-01", "email": "joe@example.com"
+    },
+    "XYZ-23456": {
+        "status": "processing", "estimated_delivery": "2025-12-15",
+        "purchase_date": "2025-12-10", "email": "sue@example.com"
+    },
+    "QWE-34567": {
+        "status": "delivered", "estimated_delivery": "2025-12-20",
+        "purchase_date": "2025-12-18", "email": "bob@example.com"
+    }
+}
 
 
 class UserInput(BaseModel):
@@ -79,7 +115,10 @@ def add_user_message(messages: list[dict], text: Optional[str], toolResponse: Op
     }
 
     if text:
-        params["content"] = text
+        params["content"] = [{
+            "type": "text",
+            "text": text
+        }]
     
     if toolResponse:
         params["content"] = toolResponse
@@ -156,7 +195,7 @@ def chat(
 ) -> str:
     params = {
         "messages": messages,
-        "model": "claude-haiku-4-5-20251001",
+        "model": "claude-sonnet-4-6",
         "max_tokens": 2000,
         "stop_sequences": stop_sequences or []
     }
@@ -200,9 +239,13 @@ def create_customer_query(user_json: str) -> str:
     response = customer_query_agent.run_sync(user_json)
     return response.output.model_dump_json(indent=2)
 
-def lookup_faq_answer(args: FAQLookupArgs, database: List[dict]) -> str:
+def lookup_faq_answer(args: FAQLookupArgs, database: List[dict] = faq_db) -> str:
     "Lookup FAQ answer by matching user's tags and words in query with FAQ keyword entries"
     print(f"running lookup_faq tool with the following args: \n {args.model_dump_json} \n")
+    try:
+        FAQLookupArgs.model_validate(args)
+    except Exception as e:
+        raise ModelRetry(f"Incorrect arguments provided. Recheck the arguments based on the error caused: {e}")
     query_words = set(word.lower() for word in args.question.split())
     tag_set = set(tag.lower() for tag in args.tags)
     best_match = None
@@ -226,9 +269,13 @@ lookup_faq_answer_schema = {
 }
 
 
-def check_order_status(args: CheckOrderStatusArgs, db: dict) -> str:
+def check_order_status(args: CheckOrderStatusArgs, db: dict = order_db) -> str:
     "returns a json formatted description of the current status of the user's order"
     print(f"running check order status tool with the following args: \n {args.model_dump_json} \n")
+    try:
+        CheckOrderStatusArgs.model_validate(args)
+    except Exception as e:
+        raise ModelRetry(f"the provided arguments are wrong. Provide the correct arguments by analyzing the error caused: {e}")
     order = db.get(args.order_id)
     if not order:
         return "couldn't find your order. Please try again with another ID."
@@ -259,50 +306,13 @@ sample_input = """
     {
         "user": "joe",
         "email": "joe@example.com",
-        "query": "I forgot my password",
-        "order_id": "ABC-12345"
+        "query": "I would like to delete my account",
+        "order_id": "XYZ-23456"
     }
 """
 
 
-faq_db = [
-    {
-        "question": "How can I reset my password?",
-        "answer": "To reset your password, you must call customer support and ask for James. He will reset the password for you and give you a lollipop.",
-        "keywords": ["password", "reset", "account"]
-    },
-    {
-        "question": "How long does shipping take?",
-        "answer": "Standard shipping takes 3-5 years. You can track your order in your account dashboard.",
-        "keywords": ["shipping", "delivery", "order", "tracking"]
-    },
-    {
-        "question": "How can I return an item?",
-        "answer": "You can return any item within 2 seconds of purchase. Visit our returns page to start the process.",
-        "keywords": ["return", "refund", "exchange"]
-    },
-    {
-        "question": "How can I delete my account?",
-        "answer": "To delete your account, head over to our headquarters and speak to Jennifer. She will guide you through the process. Bear in mind you should not harass her.",
-        "keywords": ["delete", "account", "remove"]
-    }
-]
 
-
-order_db = {
-    "ABC-12345": {
-        "status": "shipped", "estimated_delivery": "2025-12-05",
-        "purchase_date": "2025-12-01", "email": "joe@example.com"
-    },
-    "XYZ-23456": {
-        "status": "processing", "estimated_delivery": "2025-12-15",
-        "purchase_date": "2025-12-10", "email": "sue@example.com"
-    },
-    "QWE-34567": {
-        "status": "delivered", "estimated_delivery": "2025-12-20",
-        "purchase_date": "2025-12-18", "email": "bob@example.com"
-    }
-}
 
 
 
